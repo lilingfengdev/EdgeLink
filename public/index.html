@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EdgeLink - XRay代理管理器</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- 标题栏 -->
+    <div class="titlebar">
+        <div class="titlebar-content">
+            <div class="titlebar-title">
+                <i class="fas fa-network-wired"></i>
+                EdgeLink - XRay代理管理器
+            </div>
+            <div class="titlebar-controls">
+                <button class="titlebar-button" id="minimize-btn">
+                    <i class="fas fa-minus"></i>
+                </button>
+                <button class="titlebar-button" id="maximize-btn">
+                    <i class="fas fa-square"></i>
+                </button>
+                <button class="titlebar-button close" id="close-btn">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主容器 -->
+    <div class="container">
+        <!-- 侧边栏 -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>功能菜单</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="dashboard">
+                    <i class="fas fa-tachometer-alt"></i>
+                    <span>仪表板</span>
+                </a>
+                <a href="#" class="nav-item" data-page="proxies">
+                    <i class="fas fa-list"></i>
+                    <span>代理列表</span>
+                </a>
+                <a href="#" class="nav-item" data-page="add-proxy">
+                    <i class="fas fa-plus"></i>
+                    <span>添加代理</span>
+                </a>
+                <a href="#" class="nav-item" data-page="settings">
+                    <i class="fas fa-cog"></i>
+                    <span>设置</span>
+                </a>
+                <a href="#" class="nav-item" data-page="logs">
+                    <i class="fas fa-file-alt"></i>
+                    <span>日志</span>
+                </a>
+            </nav>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-content">
+            <!-- 仪表板页面 -->
+            <div class="page active" id="dashboard-page">
+                <div class="page-header">
+                    <h1>仪表板</h1>
+                    <p>代理服务状态概览</p>
+                </div>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-server"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-number" id="total-proxies">0</div>
+                            <div class="stat-label">总代理数</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon running">
+                            <i class="fas fa-play-circle"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-number" id="running-proxies">0</div>
+                            <div class="stat-label">运行中</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon stopped">
+                            <i class="fas fa-stop-circle"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-number" id="stopped-proxies">0</div>
+                            <div class="stat-label">已停止</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <div class="stat-icon">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-content">
+                            <div class="stat-number" id="uptime">0</div>
+                            <div class="stat-label">运行时间</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="recent-activity">
+                    <h3>最近活动</h3>
+                    <div class="activity-list" id="activity-list">
+                        <!-- 活动项目将通过JavaScript动态添加 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 代理列表页面 -->
+            <div class="page" id="proxies-page">
+                <div class="page-header">
+                    <h1>代理列表</h1>
+                    <div class="page-actions">
+                        <button class="btn btn-primary" id="refresh-proxies">
+                            <i class="fas fa-sync-alt"></i>
+                            刷新
+                        </button>
+                        <button class="btn btn-danger" id="stop-all-proxies">
+                            <i class="fas fa-stop"></i>
+                            停止全部
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="proxy-list" id="proxy-list">
+                    <!-- 代理项目将通过JavaScript动态添加 -->
+                </div>
+            </div>
+
+            <!-- 添加代理页面 -->
+            <div class="page" id="add-proxy-page">
+                <div class="page-header">
+                    <h1>添加代理</h1>
+                    <p>创建新的代理配置</p>
+                </div>
+                
+                <form class="proxy-form" id="proxy-form">
+                    <div class="form-section">
+                        <h3>基本配置</h3>
+                        
+                        <div class="form-group">
+                            <label for="proxy-name">代理名称</label>
+                            <input type="text" id="proxy-name" name="name" required>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="remote-address">远程地址</label>
+                                <input type="text" id="remote-address" name="address" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="remote-port">远程端口</label>
+                                <input type="number" id="remote-port" name="port" min="1" max="65535" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="local-port">本地端口</label>
+                                <input type="number" id="local-port" name="localPort" min="1" max="65535" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="protocol">协议类型</label>
+                                <select id="protocol" name="protocol" required>
+                                    <option value="vless">VLESS</option>
+                                    <option value="vmess">VMess</option>
+                                    <option value="trojan">Trojan</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" id="user-id-group">
+                            <label for="user-id">用户ID (UUID)</label>
+                            <div class="input-group">
+                                <input type="text" id="user-id" name="userId">
+                                <button type="button" class="btn btn-secondary" id="generate-uuid">
+                                    <i class="fas fa-random"></i>
+                                    生成
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" id="password-group" style="display: none;">
+                            <label for="password">密码</label>
+                            <input type="password" id="password" name="password">
+                        </div>
+                    </div>
+                    
+                    <div class="form-section">
+                        <h3>高级设置</h3>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="network">传输协议</label>
+                                <select id="network" name="network">
+                                    <option value="tcp">TCP</option>
+                                    <option value="ws">WebSocket</option>
+                                    <option value="h2">HTTP/2</option>
+                                    <option value="grpc">gRPC</option>
+                                    <option value="xhttp">xHTTP</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="security">安全类型</label>
+                                <select id="security" name="security">
+                                    <option value="none">无加密</option>
+                                    <option value="tls">TLS</option>
+                                    <option value="reality">Reality</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group" id="server-name-group">
+                            <label for="server-name">服务器名称</label>
+                            <input type="text" id="server-name" name="serverName">
+                        </div>
+                        
+                        <div class="form-group" id="path-group" style="display: none;">
+                            <label for="path">路径</label>
+                            <input type="text" id="path" name="path" value="/">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label>
+                                <input type="checkbox" id="allow-insecure" name="allowInsecure">
+                                允许不安全连接
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-plus"></i>
+                            添加代理
+                        </button>
+                        <button type="reset" class="btn btn-secondary">
+                            <i class="fas fa-undo"></i>
+                            重置
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- 设置页面 -->
+            <div class="page" id="settings-page">
+                <div class="page-header">
+                    <h1>设置</h1>
+                    <p>应用程序配置选项</p>
+                </div>
+                
+                <div class="settings-content">
+                    <div class="setting-group">
+                        <h3>XRay-core 设置</h3>
+                        <div class="setting-item">
+                            <label>XRay可执行文件路径</label>
+                            <input type="text" id="xray-path" placeholder="自动检测">
+                        </div>
+                        <div class="setting-item">
+                            <label>日志级别</label>
+                            <select id="log-level">
+                                <option value="debug">调试</option>
+                                <option value="info" selected>信息</option>
+                                <option value="warning">警告</option>
+                                <option value="error">错误</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="setting-group">
+                        <h3>界面设置</h3>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="auto-start">
+                                开机自启动
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <label>
+                                <input type="checkbox" id="minimize-to-tray">
+                                最小化到系统托盘
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 日志页面 -->
+            <div class="page" id="logs-page">
+                <div class="page-header">
+                    <h1>日志</h1>
+                    <div class="page-actions">
+                        <button class="btn btn-secondary" id="clear-logs">
+                            <i class="fas fa-trash"></i>
+                            清空日志
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="logs-content">
+                    <div class="log-viewer" id="log-viewer">
+                        <!-- 日志内容将通过JavaScript动态添加 -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 模态框 -->
+    <div class="modal" id="edit-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>编辑代理</h3>
+                <button class="modal-close" id="modal-close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- 编辑表单将通过JavaScript动态生成 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 通知容器 -->
+    <div class="notifications" id="notifications"></div>
+
+    <!-- 加载脚本 -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
