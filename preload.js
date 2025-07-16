@@ -11,10 +11,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     minimizeWindow: () => ipcRenderer.invoke('window-minimize'),
     maximizeWindow: () => ipcRenderer.invoke('window-maximize'),
     closeApp: () => ipcRenderer.invoke('app-quit'),
-    
+
+    // XRay相关
+    retryXRayDownload: () => ipcRenderer.invoke('xray-retry-download'),
+
     // 平台信息
     platform: process.platform,
-    
+
     // 版本信息
     versions: {
         node: process.versions.node,

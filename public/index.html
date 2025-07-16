@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EdgeLink - XRay代理管理器</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
@@ -41,6 +44,10 @@
                     <i class="fas fa-tachometer-alt"></i>
                     <span>仪表板</span>
                 </a>
+                <a href="#" class="nav-item" data-page="simple-mode">
+                    <i class="fas fa-rocket"></i>
+                    <span>简单模式</span>
+                </a>
                 <a href="#" class="nav-item" data-page="proxies">
                     <i class="fas fa-list"></i>
                     <span>代理列表</span>
@@ -69,6 +76,30 @@
                     <p>代理服务状态概览</p>
                 </div>
                 
+                <!-- XRay状态卡片 -->
+                <div class="xray-status-card" id="xray-status-card">
+                    <div class="xray-status-header">
+                        <div class="xray-status-icon" id="xray-status-icon">
+                            <i class="fas fa-cog fa-spin"></i>
+                        </div>
+                        <div class="xray-status-content">
+                            <div class="xray-status-title" id="xray-status-title">正在初始化XRay-core...</div>
+                            <div class="xray-status-message" id="xray-status-message">请稍候</div>
+                        </div>
+                        <div class="xray-status-actions" id="xray-status-actions" style="display: none;">
+                            <button class="btn btn-primary btn-sm" id="xray-retry-btn">
+                                <i class="fas fa-redo"></i> 重试下载
+                            </button>
+                        </div>
+                    </div>
+                    <div class="xray-progress-container" id="xray-progress-container" style="display: none;">
+                        <div class="xray-progress-bar">
+                            <div class="xray-progress-fill" id="xray-progress-fill"></div>
+                        </div>
+                        <div class="xray-progress-text" id="xray-progress-text">0%</div>
+                    </div>
+                </div>
+
                 <div class="stats-grid">
                     <div class="stat-card">
                         <div class="stat-icon">
@@ -79,7 +110,7 @@
                             <div class="stat-label">总代理数</div>
                         </div>
                     </div>
-                    
+
                     <div class="stat-card">
                         <div class="stat-icon running">
                             <i class="fas fa-play-circle"></i>
@@ -89,7 +120,7 @@
                             <div class="stat-label">运行中</div>
                         </div>
                     </div>
-                    
+
                     <div class="stat-card">
                         <div class="stat-icon stopped">
                             <i class="fas fa-stop-circle"></i>
@@ -99,7 +130,7 @@
                             <div class="stat-label">已停止</div>
                         </div>
                     </div>
-                    
+
                     <div class="stat-card">
                         <div class="stat-icon">
                             <i class="fas fa-clock"></i>
@@ -115,6 +146,81 @@
                     <h3>最近活动</h3>
                     <div class="activity-list" id="activity-list">
                         <!-- 活动项目将通过JavaScript动态添加 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 简单模式页面 -->
+            <div class="page" id="simple-mode-page">
+                <div class="page-header">
+                    <h1>简单模式</h1>
+                    <p>快速创建和启动代理服务器</p>
+                </div>
+
+                <div class="simple-mode-content">
+                    <form class="simple-form" id="simple-form">
+                        <div class="simple-form-group">
+                            <label for="simple-uuid">UUID</label>
+                            <input type="text" id="simple-uuid" name="uuid" required placeholder="请输入服务器提供的UUID">
+                        </div>
+
+                        <div class="simple-form-group">
+                            <label for="simple-remote-address">远程地址</label>
+                            <input type="text" id="simple-remote-address" name="remoteAddress" required placeholder="例如: example.com">
+                        </div>
+
+                        <div class="simple-form-row">
+                            <div class="simple-form-group">
+                                <label for="simple-remote-port">远程端口</label>
+                                <input type="number" id="simple-remote-port" name="remotePort" min="1" max="65535" required placeholder="443">
+                            </div>
+                            <div class="simple-form-group">
+                                <label for="simple-server-name">服务器名</label>
+                                <input type="text" id="simple-server-name" name="serverName" required placeholder="例如: mc.example.com">
+                            </div>
+                        </div>
+
+                        <div class="simple-form-group">
+                            <label for="simple-proxy-name">代理名称</label>
+                            <input type="text" id="simple-proxy-name" name="proxyName" required placeholder="请输入代理名称">
+                        </div>
+
+                        <div class="simple-form-actions">
+                            <button type="submit" class="btn btn-primary btn-large">
+                                <i class="fas fa-play"></i>
+                                启动服务器
+                            </button>
+                            <button type="button" class="btn btn-danger btn-large" id="simple-stop-server" style="display: none;">
+                                <i class="fas fa-stop"></i>
+                                停止服务器
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- 连接信息显示 -->
+                    <div class="connection-info" id="connection-info" style="display: none;">
+                        <h3>连接信息</h3>
+                        <div class="connection-details">
+                            <div class="connection-item">
+                                <label>服务器地址:</label>
+                                <div class="connection-value">
+                                    <span id="connection-address">localhost:25565</span>
+                                    <button class="btn btn-copy" id="copy-address" title="复制地址">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="connection-item">
+                                <label>状态:</label>
+                                <div class="connection-status">
+                                    <span class="status-indicator running" id="status-indicator"></span>
+                                    <span id="status-text">运行中</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="connection-help">
+                            <p><i class="fas fa-info-circle"></i> 你可以通过上述地址连接到Minecraft服务器</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -230,11 +336,11 @@
                         
                         <div class="form-group" id="path-group" style="display: none;">
                             <label for="path">路径</label>
-                            <input type="text" id="path" name="path" value="/">
+                            <input type="text" id="path" name="path" value="/mcproxy">
                         </div>
                         
                         <div class="form-group">
-                            <label>
+                            <label class="checkbox-label">
                                 <input type="checkbox" id="allow-insecure" name="allowInsecure">
                                 允许不安全连接
                             </label>
@@ -277,18 +383,27 @@
                                 <option value="error">错误</option>
                             </select>
                         </div>
+                        <div class="setting-item">
+                            <label>下载镜像</label>
+                            <select id="download-mirror">
+                                <option value="github">GitHub官方 (可能较慢)</option>
+                                <option value="bgithub">BGitHub镜像 (国内较快)</option>
+                                <option value="ghproxy">GitHub代理</option>
+                            </select>
+                            <small>选择XRay-core文件的下载镜像，API调用始终使用GitHub官方</small>
+                        </div>
                     </div>
                     
                     <div class="setting-group">
                         <h3>界面设置</h3>
                         <div class="setting-item">
-                            <label>
+                            <label class="checkbox-label">
                                 <input type="checkbox" id="auto-start">
                                 开机自启动
                             </label>
                         </div>
                         <div class="setting-item">
-                            <label>
+                            <label class="checkbox-label">
                                 <input type="checkbox" id="minimize-to-tray">
                                 最小化到系统托盘
                             </label>

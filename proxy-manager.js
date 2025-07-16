@@ -12,9 +12,12 @@ const ConfigValidator = require('./utils/validator');
 
 class ProxyManager {
     constructor() {
+        const { getPathManager } = require('./utils/path-manager');
+        const pathManager = getPathManager();
+
         this.configManager = new ConfigManager();
         this.processManager = new ProcessManager();
-        this.proxiesFile = path.join(__dirname, 'proxies.json');
+        this.proxiesFile = pathManager.get('proxies');
         this.proxies = new Map(); // 存储代理配置
         this.loadProxies();
     }

@@ -1,122 +1,232 @@
-name: Build and Release
+name: Build and Release EdgeLink
 
 on:
   push:
     tags:
       - 'v*'
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
   workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Release type'
+        required: true
+        default: 'draft'
+        type: choice
+        options:
+        - draft
+        - prerelease
+        - release
+
+env:
+  ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+  ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
 
 jobs:
   build:
     runs-on: ${{ matrix.os }}
-    
+
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-        
+        include:
+          - os: windows-latest
+            platform: win
+            arch: x64
+          - os: windows-latest
+            platform: win
+            arch: ia32
+          - os: macos-latest
+            platform: mac
+            arch: x64
+          - os: macos-latest
+            platform: mac
+            arch: arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+      with:
+        fetch-depth: 0
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '20'
         cache: 'npm'
-        
+
+    - name: Cache Electron
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.ELECTRON_CACHE }}
+        key: ${{ runner.os }}-electron-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-electron-
+
+    - name: Cache Electron Builder
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.ELECTRON_BUILDER_CACHE }}
+        key: ${{ runner.os }}-electron-builder-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-electron-builder-
+
     - name: Install dependencies
       run: npm ci
       
     - name: Download XRay (Windows)
-      if: matrix.os == 'windows-latest'
+      if: matrix.platform == 'win'
       run: |
         mkdir -p bin
-        curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip
+        if [ "${{ matrix.arch }}" = "x64" ]; then
+          curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-64.zip
+        else
+          curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-windows-32.zip
+        fi
         unzip xray.zip -d bin/
         rm xray.zip
+        ls -la bin/
       shell: bash
-      
+
     - name: Download XRay (macOS)
-      if: matrix.os == 'macos-latest'
+      if: matrix.platform == 'mac'
       run: |
         mkdir -p bin
-        curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-macos-64.zip
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-macos-arm64-v8a.zip
+        else
+          curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-macos-64.zip
+        fi
         unzip xray.zip -d bin/
         rm xray.zip
         chmod +x bin/xray
-        
+        ls -la bin/
+
     - name: Download XRay (Linux)
-      if: matrix.os == 'ubuntu-latest'
+      if: matrix.platform == 'linux'
       run: |
         mkdir -p bin
         curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
         unzip xray.zip -d bin/
         rm xray.zip
         chmod +x bin/xray
+        ls -la bin/
         
-    - name: Build Electron app (Windows)
-      if: matrix.os == 'windows-latest'
-      run: npm run build:win
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Build Electron app (macOS)
-      if: matrix.os == 'macos-latest'
-      run: npm run build:mac
+    - name: Prepare build environment
+      run: |
+        echo "Building for platform: ${{ matrix.platform }}"
+        echo "Architecture: ${{ matrix.arch }}"
+
+    - name: Build Electron app
+      run: |
+        if [ "${{ matrix.platform }}" = "win" ]; then
+          if [ "${{ matrix.arch }}" = "x64" ]; then
+            npx electron-builder --win --x64
+          else
+            npx electron-builder --win --ia32
+          fi
+        elif [ "${{ matrix.platform }}" = "mac" ]; then
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            npx electron-builder --mac --arm64
+          else
+            npx electron-builder --mac --x64
+          fi
+        elif [ "${{ matrix.platform }}" = "linux" ]; then
+          npx electron-builder --linux --x64
+        fi
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         CSC_IDENTITY_AUTO_DISCOVERY: false
+        APPLE_ID: ${{ secrets.APPLE_ID }}
+        APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
+        CSC_LINK: ${{ secrets.CSC_LINK }}
+        CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      shell: bash
         
-    - name: Build Electron app (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      run: npm run build:linux
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Upload artifacts (Windows)
-      if: matrix.os == 'windows-latest'
+    - name: List build outputs
+      run: |
+        echo "Build completed. Listing dist directory:"
+        ls -la dist/ || echo "No dist directory found"
+
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: EdgeLink-Windows
-        path: dist/*.exe
-        
-    - name: Upload artifacts (macOS)
-      if: matrix.os == 'macos-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: EdgeLink-macOS
-        path: dist/*.dmg
-        
-    - name: Upload artifacts (Linux)
-      if: matrix.os == 'ubuntu-latest'
-      uses: actions/upload-artifact@v4
-      with:
-        name: EdgeLink-Linux
+        name: EdgeLink-${{ matrix.platform }}-${{ matrix.arch }}
         path: |
+          dist/*.exe
+          dist/*.dmg
+          dist/*.zip
           dist/*.AppImage
           dist/*.deb
+          dist/*.rpm
+        retention-days: 30
+        if-no-files-found: warn
 
   release:
     needs: build
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    
+    if: startsWith(github.ref, 'refs/tags/') || github.event.inputs.release_type
+
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      
+      with:
+        fetch-depth: 0
+
     - name: Download all artifacts
       uses: actions/download-artifact@v4
-      
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
       with:
-        files: |
-          EdgeLink-Windows/*
-          EdgeLink-macOS/*
-          EdgeLink-Linux/*
-        draft: false
-        prerelease: false
+        path: artifacts
+
+    - name: Organize release files
+      run: |
+        mkdir -p release
+        find artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.zip" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.rpm" \) -exec cp {} release/ \;
+        ls -la release/
+
+    - name: Generate release notes
+      id: release_notes
+      run: |
+        echo "## 🚀 EdgeLink Release" > release_notes.md
+        echo "" >> release_notes.md
+        echo "### 📦 下载文件" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "| 平台 | 架构 | 文件类型 | 下载链接 |" >> release_notes.md
+        echo "|------|------|----------|----------|" >> release_notes.md
+
+        for file in release/*; do
+          if [ -f "$file" ]; then
+            filename=$(basename "$file")
+            echo "| 自动检测 | 自动检测 | ${filename##*.} | [$filename]($filename) |" >> release_notes.md
+          fi
+        done
+
+        echo "" >> release_notes.md
+        echo "### 🔧 安装说明" >> release_notes.md
+        echo "" >> release_notes.md
+        echo "- **Windows**: 下载 .exe 文件直接安装，或下载 portable 版本解压使用" >> release_notes.md
+        echo "- **macOS**: 下载 .dmg 文件安装" >> release_notes.md
+        echo "- **Linux**: 下载 .AppImage 文件直接运行，或下载 .deb/.rpm 包安装" >> release_notes.md
+
+        cat release_notes.md
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: release/*
+        body_path: release_notes.md
+        draft: ${{ github.event.inputs.release_type == 'draft' || (!startsWith(github.ref, 'refs/tags/') && !github.event.inputs.release_type) }}
+        prerelease: ${{ github.event.inputs.release_type == 'prerelease' }}
         generate_release_notes: true
+        tag_name: ${{ github.ref_name || format('v{0}', github.run_number) }}
+        name: ${{ github.ref_name || format('EdgeLink v{0}', github.run_number) }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

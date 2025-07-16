@@ -1,0 +1,68 @@
+appId: com.edgelink.app
+productName: EdgeLink
+copyright: Copyright © 2025 EdgeLink Team
+
+directories:
+  output: dist
+  buildResources: assets
+
+files:
+  - "**/*"
+  - "!**/*.ts"
+  - "!*.code-workspace"
+  - "!LICENSE.electron.txt"
+  - "!**/*.md"
+  - "!.editorconfig"
+  - "!.eslintrc.json"
+  - "!.gitignore"
+  - "!.vscode"
+  - "!.idea"
+  - "!cache/*.zip"
+  - "!proxies.json"
+  - "!download-settings.json"
+  - "!*.log"
+  - "!logs/**"
+  - "!configs/*.json"
+  - "!node_modules/.cache"
+  - "!{.git,node_modules,src,docs,dev-app-update.yml,.nyc_output,coverage}"
+  - "!{tsconfig.json,tslint.json,dev-app-update.yml,test}"
+
+# extraResources 已移除 - 所有资源文件改为运行时管理
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+    - target: portable
+      arch:
+        - x64
+  icon: icon.png
+  requestedExecutionLevel: asInvoker
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+  sign: null
+  verifyUpdateCodeSignature: false
+
+mac:
+  target:
+    - target: dir
+      arch:
+        - x64
+        - arm64
+  icon: icon.png
+  category: public.app-category.utilities
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
+linux:
+  target:
+    - target: dir
+      arch:
+        - x64
+  icon: icon.png
+  category: Network
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+
+publish:
+  provider: github
+  owner: lilingfengdev
+  repo: EdgeLink

@@ -7,24 +7,68 @@ const { spawn, exec } = require('child_process');
 const path = require('path');
 const fs = require('fs-extra');
 const logger = require('./utils/logger');
+const XRayDownloader = require('./xray-downloader');
+const XRayLogManager = require('./utils/xray-log-manager');
 
 class ProcessManager {
     constructor() {
         this.processes = new Map(); // 存储运行中的进程
-        this.xrayPath = this.findXRayExecutable();
+        this.xrayDownloader = new XRayDownloader();
+        this.xrayPath = null;
+        this.initialized = false;
+        this.logManager = new XRayLogManager();
+    }
+
+    /**
+     * 初始化XRay可执行文件路径
+     */
+    async initialize() {
+        if (this.initialized) {
+            return this.xrayPath;
+        }
+
+        try {
+            logger.info('初始化XRay可执行文件...');
+
+            // 首先尝试查找现有的XRay
+            this.xrayPath = await this.findXRayExecutable();
+
+            if (!this.xrayPath) {
+                // 如果没有找到，尝试自动下载
+                logger.info('未找到XRay，尝试自动下载...');
+                this.xrayPath = await this.xrayDownloader.ensureXRayAvailable({
+                    autoDownload: true,
+                    checkUpdates: false,
+                    silent: false
+                });
+            }
+
+            this.initialized = true;
+            logger.success(`XRay初始化完成: ${this.xrayPath}`);
+            return this.xrayPath;
+
+        } catch (error) {
+            logger.error(`XRay初始化失败: ${error.message}`);
+            throw new Error(`无法初始化XRay: ${error.message}`);
+        }
     }
 
     /**
      * 查找XRay可执行文件
      */
-    findXRayExecutable() {
+    async findXRayExecutable() {
+        // 首先检查下载器管理的路径
+        const downloadedPath = await this.xrayDownloader.checkXRayInstalled();
+        if (downloadedPath) {
+            return downloadedPath;
+        }
+
+        // 然后检查其他可能的路径
         const possiblePaths = [
             './xray',
             './xray.exe',
             'xray',
             'xray.exe',
-            path.join(__dirname, 'bin', 'xray'),
-            path.join(__dirname, 'bin', 'xray.exe'),
             '/usr/local/bin/xray',
             '/usr/bin/xray'
         ];
@@ -32,16 +76,45 @@ class ProcessManager {
         for (const xrayPath of possiblePaths) {
             try {
                 if (fs.existsSync(xrayPath)) {
-                    logger.info(`找到XRay可执行文件: ${xrayPath}`);
-                    return xrayPath;
+                    // 验证可执行性
+                    const result = await this.testXRayExecutable(xrayPath);
+                    if (result) {
+                        logger.info(`找到XRay可执行文件: ${xrayPath}`);
+                        return xrayPath;
+                    }
                 }
             } catch (error) {
                 // 继续查找
             }
         }
 
-        logger.warn('未找到XRay可执行文件，请确保已安装XRay-core');
-        return 'xray'; // 默认使用系统PATH中的xray
+        return null;
+    }
+
+    /**
+     * 测试XRay可执行文件是否有效
+     */
+    async testXRayExecutable(xrayPath) {
+        return new Promise((resolve) => {
+            const testProcess = spawn(xrayPath, ['version'], {
+                stdio: 'pipe',
+                timeout: 5000
+            });
+
+            let hasOutput = false;
+
+            testProcess.stdout.on('data', () => {
+                hasOutput = true;
+            });
+
+            testProcess.on('close', (code) => {
+                resolve(hasOutput && code === 0);
+            });
+
+            testProcess.on('error', () => {
+                resolve(false);
+            });
+        });
     }
 
     /**
@@ -49,6 +122,9 @@ class ProcessManager {
      */
     async startProxy(name, configPath) {
         try {
+            // 确保XRay已初始化
+            await this.initialize();
+
             // 检查配置文件是否存在
             if (!await fs.pathExists(configPath)) {
                 throw new Error(`配置文件不存在: ${configPath}`);
@@ -79,14 +155,22 @@ class ProcessManager {
             xrayProcess.stdout.on('data', (data) => {
                 const output = data.toString().trim();
                 if (output) {
-                    logger.debug(`[${name}] ${output}`);
+                    // 分行处理输出
+                    const lines = output.split('\n').filter(line => line.trim());
+                    for (const line of lines) {
+                        this.logManager.addLog(name, 'info', line, 'stdout');
+                    }
                 }
             });
 
             xrayProcess.stderr.on('data', (data) => {
                 const error = data.toString().trim();
                 if (error) {
-                    logger.warn(`[${name}] ${error}`);
+                    // 分行处理错误输出
+                    const lines = error.split('\n').filter(line => line.trim());
+                    for (const line of lines) {
+                        this.logManager.addLog(name, 'error', line, 'stderr');
+                    }
                 }
             });
 
@@ -261,18 +345,91 @@ class ProcessManager {
      * 检查XRay版本
      */
     async checkXRayVersion() {
-        return new Promise((resolve, reject) => {
-            exec(`${this.xrayPath} version`, (error, stdout, stderr) => {
-                if (error) {
-                    reject(new Error(`无法获取XRay版本: ${error.message}`));
-                    return;
-                }
+        try {
+            // 确保XRay已初始化
+            await this.initialize();
 
-                const version = stdout.trim();
-                logger.info(`XRay版本: ${version}`);
-                resolve(version);
+            return new Promise((resolve, reject) => {
+                exec(`"${this.xrayPath}" version`, (error, stdout, stderr) => {
+                    if (error) {
+                        reject(new Error(`无法获取XRay版本: ${error.message}`));
+                        return;
+                    }
+
+                    const version = stdout.trim();
+                    logger.info(`XRay版本: ${version}`);
+                    resolve(version);
+                });
             });
-        });
+        } catch (error) {
+            throw new Error(`检查XRay版本失败: ${error.message}`);
+        }
+    }
+
+    /**
+     * 检查XRay更新
+     */
+    async checkXRayUpdates() {
+        try {
+            const updateInfo = await this.xrayDownloader.checkForUpdates();
+            return updateInfo;
+        } catch (error) {
+            logger.warn(`检查XRay更新失败: ${error.message}`);
+            return { needsUpdate: false, error: error.message };
+        }
+    }
+
+    /**
+     * 更新XRay
+     */
+    async updateXRay(onProgress) {
+        try {
+            logger.info('开始更新XRay...');
+
+            // 停止所有运行中的代理
+            const runningProxies = Array.from(this.processes.keys());
+            if (runningProxies.length > 0) {
+                logger.info('停止运行中的代理以进行更新...');
+                await this.stopAllProxies();
+            }
+
+            // 下载并安装新版本
+            const newPath = await this.xrayDownloader.downloadAndInstall(onProgress, true);
+
+            // 更新路径
+            this.xrayPath = newPath;
+
+            // 重新启动之前运行的代理
+            if (runningProxies.length > 0) {
+                logger.info('重新启动代理...');
+                // 注意：这里需要代理管理器的支持来重新启动
+            }
+
+            logger.success('XRay更新完成');
+            return newPath;
+        } catch (error) {
+            logger.error(`XRay更新失败: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取XRay状态信息
+     */
+    getXRayStatus() {
+        return {
+            initialized: this.initialized,
+            path: this.xrayPath,
+            processCount: this.processes.size,
+            runningProcesses: Array.from(this.processes.keys())
+        };
+    }
+
+    /**
+     * 获取日志管理器
+     */
+    getLogManager() {
+        return this.logManager;
     }
 }
 

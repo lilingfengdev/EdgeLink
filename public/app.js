@@ -9,7 +9,13 @@ class EdgeLinkUI {
         this.proxies = [];
         this.stats = { total: 0, running: 0, stopped: 0 };
         this.activities = [];
-        
+        this.logs = [];
+        this.logFilters = {
+            proxy: '',
+            level: '',
+            autoScroll: true
+        };
+
         this.init();
     }
 
@@ -75,6 +81,24 @@ class EdgeLinkUI {
             this.generateUUID();
         });
 
+
+
+        // 简单模式表单提交
+        document.getElementById('simple-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.startSimpleProxy();
+        });
+
+        // 简单模式停止服务器
+        document.getElementById('simple-stop-server').addEventListener('click', () => {
+            this.stopSimpleProxy();
+        });
+
+        // 复制连接地址
+        document.getElementById('copy-address').addEventListener('click', () => {
+            this.copyConnectionAddress();
+        });
+
         // 刷新代理列表
         document.getElementById('refresh-proxies').addEventListener('click', () => {
             this.loadProxies();
@@ -95,6 +119,16 @@ class EdgeLinkUI {
             if (e.target.id === 'edit-modal') {
                 this.closeModal();
             }
+        });
+
+        // 日志页面事件
+        document.getElementById('clear-logs').addEventListener('click', () => {
+            this.clearLogs();
+        });
+
+        // XRay重试下载按钮
+        document.getElementById('xray-retry-btn').addEventListener('click', () => {
+            this.retryXRayDownload();
         });
     }
 
@@ -123,6 +157,20 @@ class EdgeLinkUI {
         this.socket.on('stats-update', (stats) => {
             this.stats = stats;
             this.updateStats();
+        });
+
+        // 日志相关事件
+        this.socket.on('xray-log', (logEntry) => {
+            this.addLogEntry(logEntry);
+        });
+
+        this.socket.on('logs-cleared', (data) => {
+            this.handleLogsCleared(data);
+        });
+
+        // XRay状态更新事件
+        this.socket.on('xray-status-update', (statusData) => {
+            this.updateXRayStatus(statusData);
         });
     }
 
@@ -185,6 +233,12 @@ class EdgeLinkUI {
             page.classList.remove('active');
         });
         document.getElementById(`${pageId}-page`).classList.add('active');
+
+        // 页面特定的加载逻辑
+        if (pageId === 'logs') {
+            this.loadLogs();
+            this.setupLogFilters();
+        }
     }
 
     /**
@@ -516,9 +570,151 @@ class EdgeLinkUI {
     /**
      * 编辑代理
      */
-    editProxy(name) {
-        // TODO: 实现编辑功能
-        this.showNotification('编辑功能开发中', 'info');
+    async editProxy(name) {
+        try {
+            // 获取代理详情
+            const response = await fetch(`/api/proxies`);
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.error);
+            }
+
+            const proxy = result.data.find(p => p.name === name);
+            if (!proxy) {
+                throw new Error('代理不存在');
+            }
+
+            // 显示编辑模态框
+            this.showEditModal(proxy);
+
+        } catch (error) {
+            this.showNotification(`获取代理信息失败: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * 显示编辑模态框
+     */
+    showEditModal(proxy) {
+        const modal = document.getElementById('edit-modal');
+        const modalBody = modal.querySelector('.modal-body');
+
+        // 生成编辑表单HTML
+        modalBody.innerHTML = `
+            <form id="edit-proxy-form" class="proxy-form">
+                <div class="form-section">
+                    <h3>基本配置</h3>
+
+                    <div class="form-group">
+                        <label for="edit-proxy-name">代理名称</label>
+                        <input type="text" id="edit-proxy-name" name="name" value="${proxy.name}" readonly>
+                        <small>代理名称不可修改</small>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-remote-address">远程地址</label>
+                            <input type="text" id="edit-remote-address" name="address" value="${proxy.address}" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-remote-port">远程端口</label>
+                            <input type="number" id="edit-remote-port" name="port" value="${proxy.port}" min="1" max="65535" required>
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-local-port">本地端口</label>
+                            <input type="number" id="edit-local-port" name="localPort" value="${proxy.localPort}" min="1" max="65535" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-protocol">协议类型</label>
+                            <select id="edit-protocol" name="protocol" required>
+                                <option value="vless" ${proxy.protocol === 'vless' ? 'selected' : ''}>VLESS</option>
+                                <option value="vmess" ${proxy.protocol === 'vmess' ? 'selected' : ''}>VMess</option>
+                                <option value="trojan" ${proxy.protocol === 'trojan' ? 'selected' : ''}>Trojan</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="edit-user-id-group">
+                        <label for="edit-user-id">用户ID (UUID)</label>
+                        <div class="input-group">
+                            <input type="text" id="edit-user-id" name="userId" value="${proxy.userId || ''}">
+                            <button type="button" class="btn btn-secondary" id="edit-generate-uuid">
+                                <i class="fas fa-random"></i>
+                                生成
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="edit-password-group" style="display: none;">
+                        <label for="edit-password">密码</label>
+                        <input type="password" id="edit-password" name="password" value="${proxy.password || ''}">
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>高级设置</h3>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="edit-network">传输协议</label>
+                            <select id="edit-network" name="network">
+                                <option value="tcp" ${proxy.network === 'tcp' ? 'selected' : ''}>TCP</option>
+                                <option value="ws" ${proxy.network === 'ws' ? 'selected' : ''}>WebSocket</option>
+                                <option value="h2" ${proxy.network === 'h2' ? 'selected' : ''}>HTTP/2</option>
+                                <option value="grpc" ${proxy.network === 'grpc' ? 'selected' : ''}>gRPC</option>
+                                <option value="xhttp" ${proxy.network === 'xhttp' ? 'selected' : ''}>xHTTP</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="edit-security">安全类型</label>
+                            <select id="edit-security" name="security">
+                                <option value="none" ${proxy.security === 'none' ? 'selected' : ''}>无加密</option>
+                                <option value="tls" ${proxy.security === 'tls' ? 'selected' : ''}>TLS</option>
+                                <option value="reality" ${proxy.security === 'reality' ? 'selected' : ''}>Reality</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="edit-server-name-group">
+                        <label for="edit-server-name">服务器名称</label>
+                        <input type="text" id="edit-server-name" name="serverName" value="${proxy.serverName || ''}">
+                    </div>
+
+                    <div class="form-group" id="edit-path-group" style="display: none;">
+                        <label for="edit-path">路径</label>
+                        <input type="text" id="edit-path" name="path" value="${proxy.path || '/'}">
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="edit-allow-insecure" name="allowInsecure" ${proxy.allowInsecure ? 'checked' : ''}>
+                            允许不安全连接
+                        </label>
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i>
+                        保存修改
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="app.closeModal()">
+                        <i class="fas fa-times"></i>
+                        取消
+                    </button>
+                </div>
+            </form>
+        `;
+
+        // 设置表单事件监听器
+        this.setupEditFormListeners(proxy);
+
+        // 显示模态框
+        modal.classList.add('active');
     }
 
     /**
@@ -526,6 +722,135 @@ class EdgeLinkUI {
      */
     closeModal() {
         document.getElementById('edit-modal').classList.remove('active');
+    }
+
+    /**
+     * 设置编辑表单事件监听器
+     */
+    setupEditFormListeners(proxy) {
+        // 表单提交
+        document.getElementById('edit-proxy-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.updateProxy(proxy.name);
+        });
+
+        // 协议类型变化
+        document.getElementById('edit-protocol').addEventListener('change', (e) => {
+            this.updateEditFormFields(e.target.value);
+        });
+
+        // 网络类型变化
+        document.getElementById('edit-network').addEventListener('change', (e) => {
+            this.updateEditNetworkFields(e.target.value);
+        });
+
+        // 安全类型变化
+        document.getElementById('edit-security').addEventListener('change', (e) => {
+            this.updateEditSecurityFields(e.target.value);
+        });
+
+        // UUID生成
+        document.getElementById('edit-generate-uuid').addEventListener('click', () => {
+            this.generateEditUUID();
+        });
+
+        // 初始化表单字段显示
+        this.updateEditFormFields(proxy.protocol);
+        this.updateEditNetworkFields(proxy.network);
+        this.updateEditSecurityFields(proxy.security);
+    }
+
+    /**
+     * 更新代理配置
+     */
+    async updateProxy(name) {
+        try {
+            const formData = new FormData(document.getElementById('edit-proxy-form'));
+            const config = {
+                address: formData.get('address'),
+                port: parseInt(formData.get('port')),
+                localPort: parseInt(formData.get('localPort')),
+                protocol: formData.get('protocol'),
+                userId: formData.get('userId'),
+                password: formData.get('password'),
+                network: formData.get('network'),
+                security: formData.get('security'),
+                serverName: formData.get('serverName'),
+                path: formData.get('path'),
+                allowInsecure: formData.get('allowInsecure') === 'on'
+            };
+
+            const response = await fetch(`/api/proxies/${encodeURIComponent(name)}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ config })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showNotification(`代理 "${name}" 更新成功`, 'success');
+                this.closeModal();
+                this.loadProxies(); // 刷新代理列表
+            } else {
+                throw new Error(result.error);
+            }
+
+        } catch (error) {
+            this.showNotification(`更新代理失败: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * 更新编辑表单字段显示
+     */
+    updateEditFormFields(protocol) {
+        const userIdGroup = document.getElementById('edit-user-id-group');
+        const passwordGroup = document.getElementById('edit-password-group');
+
+        if (protocol === 'trojan') {
+            userIdGroup.style.display = 'none';
+            passwordGroup.style.display = 'block';
+        } else {
+            userIdGroup.style.display = 'block';
+            passwordGroup.style.display = 'none';
+        }
+    }
+
+    /**
+     * 更新编辑表单网络字段
+     */
+    updateEditNetworkFields(network) {
+        const pathGroup = document.getElementById('edit-path-group');
+
+        if (network === 'ws' || network === 'h2') {
+            pathGroup.style.display = 'block';
+        } else {
+            pathGroup.style.display = 'none';
+        }
+    }
+
+    /**
+     * 更新编辑表单安全字段
+     */
+    updateEditSecurityFields(security) {
+        const serverNameGroup = document.getElementById('edit-server-name-group');
+
+        if (security === 'tls' || security === 'reality') {
+            serverNameGroup.style.display = 'block';
+        } else {
+            serverNameGroup.style.display = 'none';
+        }
+    }
+
+    /**
+     * 生成编辑表单UUID
+     */
+    generateEditUUID() {
+        const uuid = this.generateUUID();
+        document.getElementById('edit-user-id').value = uuid;
     }
 
     /**
@@ -567,7 +892,549 @@ class EdgeLinkUI {
         };
         return titles[type] || '通知';
     }
+
+
+
+    /**
+     * 启动简单代理
+     */
+    async startSimpleProxy() {
+        try {
+            const formData = new FormData(document.getElementById('simple-form'));
+            const config = {
+                uuid: formData.get('uuid'),
+                remoteAddress: formData.get('remoteAddress'),
+                remotePort: parseInt(formData.get('remotePort')),
+                serverName: formData.get('serverName'),
+                proxyName: formData.get('proxyName')
+            };
+
+            // 验证输入
+            if (!config.uuid || !config.remoteAddress || !config.remotePort || !config.serverName || !config.proxyName) {
+                throw new Error('请填写所有必需字段');
+            }
+
+            // 发送请求到后端
+            const response = await fetch('/api/simple-proxy/start', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(config)
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showSimpleProxyRunning(result.data);
+                this.showNotification(result.message, 'success');
+            } else {
+                throw new Error(result.error);
+            }
+
+        } catch (error) {
+            this.showNotification(`启动失败: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * 停止简单代理
+     */
+    async stopSimpleProxy() {
+        try {
+            const response = await fetch('/api/simple-proxy/stop', {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.hideSimpleProxyRunning();
+                this.showNotification('简单代理已停止', 'success');
+            } else {
+                throw new Error(result.error);
+            }
+
+        } catch (error) {
+            this.showNotification(`停止失败: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * 显示简单代理运行状态
+     */
+    showSimpleProxyRunning(data) {
+        // 隐藏启动按钮，显示停止按钮
+        document.getElementById('simple-form').querySelector('button[type="submit"]').style.display = 'none';
+        document.getElementById('simple-stop-server').style.display = 'inline-block';
+
+        // 显示连接信息
+        const connectionInfo = document.getElementById('connection-info');
+        const addressSpan = document.getElementById('connection-address');
+        const statusIndicator = document.getElementById('status-indicator');
+        const statusText = document.getElementById('status-text');
+
+        addressSpan.textContent = `localhost:${data.localPort}`;
+        statusIndicator.className = 'status-indicator running';
+        statusText.textContent = '运行中';
+
+        connectionInfo.style.display = 'block';
+
+        // 禁用表单输入
+        const inputs = document.getElementById('simple-form').querySelectorAll('input');
+        inputs.forEach(input => input.disabled = true);
+    }
+
+    /**
+     * 隐藏简单代理运行状态
+     */
+    hideSimpleProxyRunning() {
+        // 显示启动按钮，隐藏停止按钮
+        document.getElementById('simple-form').querySelector('button[type="submit"]').style.display = 'inline-block';
+        document.getElementById('simple-stop-server').style.display = 'none';
+
+        // 隐藏连接信息
+        document.getElementById('connection-info').style.display = 'none';
+
+        // 启用表单输入
+        const inputs = document.getElementById('simple-form').querySelectorAll('input');
+        inputs.forEach(input => input.disabled = false);
+    }
+
+    /**
+     * 复制连接地址
+     */
+    async copyConnectionAddress() {
+        try {
+            const address = document.getElementById('connection-address').textContent;
+            await navigator.clipboard.writeText(address);
+            this.showNotification('连接地址已复制到剪贴板', 'success');
+        } catch (error) {
+            // 降级方案
+            const textArea = document.createElement('textarea');
+            textArea.value = document.getElementById('connection-address').textContent;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            this.showNotification('连接地址已复制到剪贴板', 'success');
+        }
+    }
+
+    /**
+     * 加载日志
+     */
+    async loadLogs() {
+        try {
+            const response = await fetch('/api/logs/xray?limit=100');
+            const result = await response.json();
+
+            if (result.success) {
+                this.logs = result.data.logs;
+                this.updateLogViewer();
+            }
+        } catch (error) {
+            console.error('加载日志失败:', error);
+            this.showNotification('加载日志失败', 'error');
+        }
+    }
+
+    /**
+     * 设置日志过滤器
+     */
+    setupLogFilters() {
+        const logViewer = document.getElementById('log-viewer');
+
+        // 创建过滤器控件
+        if (!document.getElementById('log-filters')) {
+            const filtersHtml = `
+                <div class="log-filters" id="log-filters">
+                    <div class="filter-group">
+                        <label for="proxy-filter">代理:</label>
+                        <select id="proxy-filter">
+                            <option value="">全部</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="level-filter">级别:</label>
+                        <select id="level-filter">
+                            <option value="">全部</option>
+                            <option value="debug">调试</option>
+                            <option value="info">信息</option>
+                            <option value="warn">警告</option>
+                            <option value="error">错误</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="auto-scroll" checked>
+                            自动滚动
+                        </label>
+                    </div>
+                    <div class="filter-group">
+                        <button class="btn btn-secondary" id="export-logs">
+                            <i class="fas fa-download"></i>
+                            导出日志
+                        </button>
+                    </div>
+                </div>
+                <div class="log-content" id="log-content"></div>
+            `;
+
+            logViewer.innerHTML = filtersHtml;
+
+            // 绑定过滤器事件
+            document.getElementById('proxy-filter').addEventListener('change', (e) => {
+                this.logFilters.proxy = e.target.value;
+                this.filterLogs();
+            });
+
+            document.getElementById('level-filter').addEventListener('change', (e) => {
+                this.logFilters.level = e.target.value;
+                this.filterLogs();
+            });
+
+            document.getElementById('auto-scroll').addEventListener('change', (e) => {
+                this.logFilters.autoScroll = e.target.checked;
+            });
+
+            document.getElementById('export-logs').addEventListener('click', () => {
+                this.exportLogs();
+            });
+        }
+
+        // 更新代理选项
+        this.updateProxyFilter();
+    }
+
+    /**
+     * 更新代理过滤器选项
+     */
+    updateProxyFilter() {
+        const proxyFilter = document.getElementById('proxy-filter');
+        if (!proxyFilter) return;
+
+        // 保存当前选择
+        const currentValue = proxyFilter.value;
+
+        // 清空选项
+        proxyFilter.innerHTML = '<option value="">全部</option>';
+
+        // 添加代理选项
+        const proxyNames = [...new Set(this.logs.map(log => log.proxyName))];
+        proxyNames.forEach(name => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            proxyFilter.appendChild(option);
+        });
+
+        // 恢复选择
+        proxyFilter.value = currentValue;
+    }
+
+    /**
+     * 过滤日志
+     */
+    filterLogs() {
+        this.updateLogViewer();
+    }
+
+    /**
+     * 更新日志查看器
+     */
+    updateLogViewer() {
+        const logContent = document.getElementById('log-content');
+        if (!logContent) return;
+
+        // 过滤日志
+        let filteredLogs = this.logs;
+
+        if (this.logFilters.proxy) {
+            filteredLogs = filteredLogs.filter(log => log.proxyName === this.logFilters.proxy);
+        }
+
+        if (this.logFilters.level) {
+            filteredLogs = filteredLogs.filter(log => log.level === this.logFilters.level);
+        }
+
+        // 生成日志HTML
+        const logsHtml = filteredLogs.map(log => {
+            const timestamp = new Date(log.timestamp).toLocaleString('zh-CN');
+            const levelClass = `log-level-${log.level}`;
+
+            return `
+                <div class="log-entry ${levelClass}">
+                    <div class="log-header">
+                        <span class="log-time">${timestamp}</span>
+                        <span class="log-proxy">[${log.proxyName}]</span>
+                        <span class="log-level">${log.level.toUpperCase()}</span>
+                    </div>
+                    <div class="log-message">${this.escapeHtml(log.message)}</div>
+                </div>
+            `;
+        }).join('');
+
+        logContent.innerHTML = logsHtml || '<div class="no-logs">暂无日志</div>';
+
+        // 自动滚动到底部
+        if (this.logFilters.autoScroll) {
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        // 更新代理过滤器
+        this.updateProxyFilter();
+    }
+
+    /**
+     * 添加新日志条目
+     */
+    addLogEntry(logEntry) {
+        this.logs.unshift(logEntry);
+
+        // 限制日志数量
+        if (this.logs.length > 1000) {
+            this.logs = this.logs.slice(0, 1000);
+        }
+
+        // 如果当前在日志页面，更新显示
+        if (document.getElementById('logs-page').classList.contains('active')) {
+            this.updateLogViewer();
+        }
+    }
+
+    /**
+     * 处理日志清空事件
+     */
+    handleLogsCleared(data) {
+        if (data.all) {
+            this.logs = [];
+        } else if (data.proxyName) {
+            this.logs = this.logs.filter(log => log.proxyName !== data.proxyName);
+        }
+
+        // 如果当前在日志页面，更新显示
+        if (document.getElementById('logs-page').classList.contains('active')) {
+            this.updateLogViewer();
+        }
+
+        this.showNotification('日志已清空', 'success');
+    }
+
+    /**
+     * 清空日志
+     */
+    async clearLogs() {
+        try {
+            const response = await fetch('/api/logs/clear', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({})
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.logs = [];
+                this.updateLogViewer();
+                this.showNotification('日志已清空', 'success');
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            this.showNotification(`清空日志失败: ${error.message}`, 'error');
+        }
+    }
+
+    /**
+     * 导出日志
+     */
+    exportLogs() {
+        try {
+            const logText = this.logs.map(log => {
+                const timestamp = new Date(log.timestamp).toLocaleString('zh-CN');
+                return `[${timestamp}] [${log.proxyName}] [${log.level.toUpperCase()}] ${log.message}`;
+            }).join('\n');
+
+            const blob = new Blob([logText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `edgelink-logs-${new Date().toISOString().split('T')[0]}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            URL.revokeObjectURL(url);
+            this.showNotification('日志已导出', 'success');
+        } catch (error) {
+            this.showNotification('导出日志失败', 'error');
+        }
+    }
+
+    /**
+     * HTML转义
+     */
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
 }
 
 // 初始化应用程序
 const app = new EdgeLinkUI();
+
+/**
+ * 加载下载镜像设置
+ */
+async function loadDownloadMirrorSettings() {
+    try {
+        const response = await fetch('/api/download-mirror');
+        if (response.ok) {
+            const data = await response.json();
+            const select = document.getElementById('download-mirror');
+            if (select) {
+                select.value = data.type || 'github';
+            }
+        }
+    } catch (error) {
+        console.error('加载下载镜像设置失败:', error);
+    }
+}
+
+/**
+ * 保存下载镜像设置
+ */
+async function saveDownloadMirrorSettings() {
+    try {
+        const select = document.getElementById('download-mirror');
+        if (!select) return;
+
+        const response = await fetch('/api/download-mirror', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ type: select.value })
+        });
+
+        if (response.ok) {
+            app.showNotification('下载镜像设置已保存', 'success');
+        } else {
+            app.showNotification('保存设置失败', 'error');
+        }
+    } catch (error) {
+        app.showNotification('网络错误: ' + error.message, 'error');
+    }
+}
+
+/**
+ * 更新XRay状态显示
+ */
+EdgeLinkUI.prototype.updateXRayStatus = function(statusData) {
+    const statusCard = document.getElementById('xray-status-card');
+    const statusIcon = document.getElementById('xray-status-icon');
+    const statusTitle = document.getElementById('xray-status-title');
+    const statusMessage = document.getElementById('xray-status-message');
+    const statusActions = document.getElementById('xray-status-actions');
+    const progressContainer = document.getElementById('xray-progress-container');
+    const progressFill = document.getElementById('xray-progress-fill');
+    const progressText = document.getElementById('xray-progress-text');
+
+    // 更新图标和状态
+    statusIcon.className = 'xray-status-icon ' + statusData.status;
+    statusTitle.textContent = this.getXRayStatusTitle(statusData.status);
+    statusMessage.textContent = statusData.message;
+
+    // 更新图标内容
+    const iconElement = statusIcon.querySelector('i');
+    switch (statusData.status) {
+        case 'initializing':
+            iconElement.className = 'fas fa-cog fa-spin';
+            break;
+        case 'downloading':
+            iconElement.className = 'fas fa-download';
+            break;
+        case 'ready':
+            iconElement.className = 'fas fa-check-circle';
+            break;
+        case 'download_required':
+        case 'download_failed':
+            iconElement.className = 'fas fa-exclamation-triangle';
+            break;
+        default:
+            iconElement.className = 'fas fa-cog';
+    }
+
+    // 显示/隐藏操作按钮
+    if (statusData.status === 'download_required' || statusData.status === 'download_failed') {
+        statusActions.style.display = 'flex';
+    } else {
+        statusActions.style.display = 'none';
+    }
+
+    // 显示/隐藏进度条
+    if (statusData.status === 'downloading' && statusData.progress !== undefined) {
+        progressContainer.style.display = 'block';
+        progressFill.style.width = statusData.progress + '%';
+        progressText.textContent = Math.round(statusData.progress) + '%';
+
+        if (statusData.details) {
+            statusMessage.textContent = statusData.details;
+        }
+    } else {
+        progressContainer.style.display = 'none';
+    }
+};
+
+/**
+ * 获取XRay状态标题
+ */
+EdgeLinkUI.prototype.getXRayStatusTitle = function(status) {
+    switch (status) {
+        case 'initializing':
+            return '正在初始化XRay-core';
+        case 'downloading':
+            return '正在下载XRay-core';
+        case 'ready':
+            return 'XRay-core已就绪';
+        case 'download_required':
+            return 'XRay-core需要下载';
+        case 'download_failed':
+            return 'XRay-core下载失败';
+        default:
+            return 'XRay-core状态未知';
+    }
+};
+
+/**
+ * 重试XRay下载
+ */
+EdgeLinkUI.prototype.retryXRayDownload = function() {
+    if (window.electronAPI) {
+        window.electronAPI.retryXRayDownload()
+            .then(() => {
+                this.showNotification('开始重试下载XRay-core', 'info');
+            })
+            .catch((error) => {
+                this.showNotification('重试下载失败: ' + error.message, 'error');
+            });
+    } else {
+        this.showNotification('重试下载功能仅在桌面应用中可用', 'warning');
+    }
+};
+
+// 页面加载时加载设置
+document.addEventListener('DOMContentLoaded', () => {
+    loadDownloadMirrorSettings();
+
+    // 监听下载镜像选择变化
+    const mirrorSelect = document.getElementById('download-mirror');
+    if (mirrorSelect) {
+        mirrorSelect.addEventListener('change', saveDownloadMirrorSettings);
+    }
+});

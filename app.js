@@ -20,12 +20,58 @@ class EdgeLinkApp {
     async start() {
         console.clear();
         this.showBanner();
-        
+
         try {
+            // 初始化XRay（包括自动下载）
+            logger.info('正在初始化XRay-core...');
+            await this.proxyManager.processManager.initialize();
+
             // 检查XRay版本
             await this.proxyManager.processManager.checkXRayVersion();
+
+            // 检查更新
+            const updateInfo = await this.proxyManager.processManager.checkXRayUpdates();
+            if (updateInfo.needsUpdate && updateInfo.reason === 'outdated') {
+                logger.info(`发现新版本 ${updateInfo.latestVersion}，当前版本 ${updateInfo.currentVersion}`);
+
+                const { shouldUpdate } = await inquirer.prompt([
+                    {
+                        type: 'confirm',
+                        name: 'shouldUpdate',
+                        message: '是否要更新到最新版本？',
+                        default: false
+                    }
+                ]);
+
+                if (shouldUpdate) {
+                    await this.updateXRay();
+                }
+            }
+
         } catch (error) {
-            logger.warn('XRay版本检查失败，请确保已正确安装XRay-core');
+            logger.error(`XRay初始化失败: ${error.message}`);
+
+            // 尝试提示用户手动下载
+            try {
+                const { tryDownload } = await inquirer.prompt([
+                    {
+                        type: 'confirm',
+                        name: 'tryDownload',
+                        message: '是否要尝试自动下载XRay-core？',
+                        default: true
+                    }
+                ]);
+
+                if (tryDownload) {
+                    await this.downloadXRay();
+                } else {
+                    logger.error('无法继续，请手动安装XRay-core');
+                    process.exit(1);
+                }
+            } catch (promptError) {
+                logger.error('无法继续，请手动安装XRay-core');
+                process.exit(1);
+            }
         }
 
         await this.showMainMenu();
@@ -66,6 +112,7 @@ class EdgeLinkApp {
                             { name: '🔄 重启代理', value: 'restart' },
                             { name: '⏹️  停止所有代理', value: 'stopall' },
                             { name: '📊 查看代理详情', value: 'details' },
+                            { name: '🔧 XRay管理', value: 'xray' },
                             { name: '❌ 退出程序', value: 'exit' }
                         ]
                     }
@@ -111,6 +158,9 @@ class EdgeLinkApp {
                 break;
             case 'details':
                 await this.showProxyDetails();
+                break;
+            case 'xray':
+                await this.showXRayMenu();
                 break;
             case 'exit':
                 await this.exitApp();
@@ -302,11 +352,9 @@ class EdgeLinkApp {
                 name: 'security',
                 message: '安全类型:',
                 choices: [
-                    { name: '无加密', value: 'none' },
-                    { name: 'TLS', value: 'tls' },
-                    { name: 'Reality', value: 'reality' }
+                    { name: 'TLS (强制)', value: 'tls' }
                 ],
-                default: existingSettings.security || 'tls'
+                default: 'tls' // 强制使用TLS
             }
         ]);
 
@@ -323,7 +371,7 @@ class EdgeLinkApp {
                     type: 'confirm',
                     name: 'allowInsecure',
                     message: '允许不安全连接?',
-                    default: existingSettings.allowInsecure || false
+                    default: true // 强制设置为true
                 }
             ]);
             
@@ -356,7 +404,7 @@ class EdgeLinkApp {
                     type: 'input',
                     name: 'path',
                     message: 'xHTTP路径:',
-                    default: existingSettings.path || '/'
+                    default: existingSettings.path || '/mcproxy'
                 },
                 {
                     type: 'list',
@@ -366,7 +414,7 @@ class EdgeLinkApp {
                     default: existingSettings.mode || 'auto'
                 }
             ]);
-            
+
             Object.assign(settings, xhttpSettings);
         }
 
@@ -571,6 +619,230 @@ class EdgeLinkApp {
                 const uptime = Math.floor(details.processStatus.uptime / 1000);
                 console.log(`运行时间: ${uptime} 秒`);
             }
+        }
+
+        await this.pressAnyKey();
+    }
+
+    /**
+     * XRay管理菜单
+     */
+    async showXRayMenu() {
+        const { action } = await inquirer.prompt([
+            {
+                type: 'list',
+                name: 'action',
+                message: '请选择XRay管理操作:',
+                choices: [
+                    { name: '📊 查看XRay状态', value: 'status' },
+                    { name: '🔍 检查更新', value: 'check_update' },
+                    { name: '⬇️  更新XRay', value: 'update' },
+                    { name: '🗑️  清理缓存', value: 'clean_cache' },
+                    { name: '🔄 重新初始化', value: 'reinit' },
+                    { name: '⬅️  返回主菜单', value: 'back' }
+                ]
+            }
+        ]);
+
+        switch (action) {
+            case 'status':
+                await this.showXRayStatus();
+                break;
+            case 'check_update':
+                await this.checkXRayUpdate();
+                break;
+            case 'update':
+                await this.updateXRay();
+                break;
+            case 'clean_cache':
+                await this.cleanXRayCache();
+                break;
+            case 'reinit':
+                await this.reinitializeXRay();
+                break;
+            case 'back':
+                return;
+        }
+
+        if (action !== 'back') {
+            await this.showXRayMenu();
+        }
+    }
+
+    /**
+     * 显示XRay状态
+     */
+    async showXRayStatus() {
+        try {
+            const status = this.proxyManager.processManager.getXRayStatus();
+            const version = await this.proxyManager.processManager.checkXRayVersion();
+
+            console.log(chalk.green('\nXRay状态信息:'));
+            console.log('─'.repeat(50));
+            console.log(`初始化状态: ${status.initialized ? chalk.green('已初始化') : chalk.red('未初始化')}`);
+            console.log(`可执行文件: ${status.path || '未找到'}`);
+            console.log(`版本信息: ${version}`);
+            console.log(`运行中的代理: ${status.processCount} 个`);
+
+            if (status.runningProcesses.length > 0) {
+                console.log(`代理列表: ${status.runningProcesses.join(', ')}`);
+            }
+
+        } catch (error) {
+            logger.error(`获取XRay状态失败: ${error.message}`);
+        }
+
+        await this.pressAnyKey();
+    }
+
+    /**
+     * 检查XRay更新
+     */
+    async checkXRayUpdate() {
+        try {
+            logger.info('正在检查XRay更新...');
+            const updateInfo = await this.proxyManager.processManager.checkXRayUpdates();
+
+            if (updateInfo.needsUpdate) {
+                console.log(chalk.yellow(`\n发现新版本: ${updateInfo.latestVersion}`));
+                if (updateInfo.currentVersion) {
+                    console.log(`当前版本: ${updateInfo.currentVersion}`);
+                }
+                console.log(`更新原因: ${updateInfo.reason === 'outdated' ? '版本过旧' : '未安装'}`);
+            } else {
+                console.log(chalk.green('\n当前已是最新版本'));
+            }
+
+        } catch (error) {
+            logger.error(`检查更新失败: ${error.message}`);
+        }
+
+        await this.pressAnyKey();
+    }
+
+    /**
+     * 更新XRay
+     */
+    async updateXRay() {
+        try {
+            const { confirm } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'confirm',
+                    message: '确定要更新XRay吗？这将停止所有运行中的代理。',
+                    default: false
+                }
+            ]);
+
+            if (!confirm) {
+                return;
+            }
+
+            logger.info('正在更新XRay...');
+
+            await this.proxyManager.processManager.updateXRay((progress) => {
+                if (progress.type === 'download') {
+                    process.stdout.write(`\r下载进度: ${progress.progress}%`);
+                } else if (progress.type === 'extract') {
+                    process.stdout.write('\r正在解压...');
+                } else if (progress.type === 'complete') {
+                    process.stdout.write('\r更新完成！\n');
+                }
+            });
+
+            logger.success('XRay更新完成！');
+
+        } catch (error) {
+            logger.error(`更新失败: ${error.message}`);
+        }
+
+        await this.pressAnyKey();
+    }
+
+    /**
+     * 下载XRay
+     */
+    async downloadXRay() {
+        try {
+            logger.info('正在下载XRay...');
+
+            await this.proxyManager.processManager.xrayDownloader.downloadAndInstall((progress) => {
+                if (progress.type === 'download') {
+                    process.stdout.write(`\r下载进度: ${progress.progress}%`);
+                } else if (progress.type === 'extract') {
+                    process.stdout.write('\r正在解压...');
+                } else if (progress.type === 'complete') {
+                    process.stdout.write('\r下载完成！\n');
+                }
+            });
+
+            // 重新初始化
+            await this.proxyManager.processManager.initialize();
+            logger.success('XRay下载并初始化完成！');
+
+        } catch (error) {
+            logger.error(`下载失败: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * 清理XRay缓存
+     */
+    async cleanXRayCache() {
+        try {
+            const { confirm } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'confirm',
+                    message: '确定要清理XRay缓存吗？',
+                    default: true
+                }
+            ]);
+
+            if (confirm) {
+                await this.proxyManager.processManager.xrayDownloader.cleanCache();
+                logger.success('缓存清理完成！');
+            }
+
+        } catch (error) {
+            logger.error(`清理缓存失败: ${error.message}`);
+        }
+
+        await this.pressAnyKey();
+    }
+
+    /**
+     * 重新初始化XRay
+     */
+    async reinitializeXRay() {
+        try {
+            const { confirm } = await inquirer.prompt([
+                {
+                    type: 'confirm',
+                    name: 'confirm',
+                    message: '确定要重新初始化XRay吗？这将停止所有运行中的代理。',
+                    default: false
+                }
+            ]);
+
+            if (!confirm) {
+                return;
+            }
+
+            // 停止所有代理
+            await this.proxyManager.stopAllProxies();
+
+            // 重置初始化状态
+            this.proxyManager.processManager.initialized = false;
+            this.proxyManager.processManager.xrayPath = null;
+
+            // 重新初始化
+            await this.proxyManager.processManager.initialize();
+            logger.success('XRay重新初始化完成！');
+
+        } catch (error) {
+            logger.error(`重新初始化失败: ${error.message}`);
         }
 
         await this.pressAnyKey();

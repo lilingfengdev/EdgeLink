@@ -1,10 +1,208 @@
 {
   "name": "EdgeLink",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "EdgeLink - Minecraft专用XRay代理管理器",
+  "main": "main.js",
+  "homepage": "https://github.com/lilingfengdev/EdgeLink",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node app.js",
+    "gui": "electron main.js",
+    "dev": "cross-env NODE_ENV=development electron main.js --dev",
+    "build": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win dir",
+    "build:win": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win dir",
+    "build:portable": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win portable",
+    "build:mac": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac",
+    "build:linux": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --linux",
+    "build:all": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win --mac --linux",
+    "build:nsis": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win nsis",
+    "build:portable": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --win portable",
+    "build:production": "npm run clean && npm run build:portable",
+    "build:full": "npm run clean && npm run build:nsis && npm run build:portable",
+    "clean:all": "rmdir /s /q dist 2>nul & rmdir /s /q cache 2>nul & del /q logs\\*.log 2>nul || echo \"Cleaned\"",
+    "pack": "cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+    "dist": "npm run build",
+    "clean": "rmdir /s /q dist 2>nul || echo \"dist directory cleaned\"",
+    "rebuild": "npm run clean && npm run build",
+    "postinstall": "electron-builder install-app-deps"
   },
+  "build": {
+    "appId": "com.edgelink.minecraft.proxy",
+    "productName": "EdgeLink",
+    "copyright": "Copyright © 2025 8aka-Team",
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "app.js",
+      "config-manager.js",
+      "config-validator.js",
+      "process-manager.js",
+      "proxy-manager.js",
+      "web-server.js",
+      "xray-downloader.js",
+      "download-settings-manager.js",
+      "utils/**/*",
+      "public/**/*",
+      "bin/xray_no_window.*",
+      "package.json",
+      "icon.png",
+      "!**/*.ts",
+      "!**/*.md",
+      "!.vscode/**",
+      "!.idea/**",
+      "!cache/**",
+      "!logs/**",
+      "!dist/**",
+      "!bin/xray.exe",
+      "!bin/geoip.dat",
+      "!bin/geosite.dat",
+      "!bin/LICENSE",
+      "!bin/README.md",
+      "!configs/*.json",
+      "!proxies.json",
+      "!download-settings.json",
+      "!*.log",
+      "!node_modules/.cache/**",
+      "!{.git,.nyc_output,coverage,docs,test,scripts}/**",
+      "!{*.code-workspace,.editorconfig,.eslintrc.json,.gitignore}",
+      "!{tsconfig.json,tslint.json,dev-app-update.yml}",
+      "!build*.js",
+      "!build*.bat",
+      "!test*.js"
+    ],
+
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.png",
+      "requestedExecutionLevel": "asInvoker",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+      "sign": null,
+      "verifyUpdateCodeSignature": false,
+      "signAndEditExecutable": false,
+      "signDlls": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "EdgeLink - Minecraft代理管理器",
+      "installerIcon": "icon.png",
+      "uninstallerIcon": "icon.png",
+      "artifactName": "${productName}-${version}-${os}-${arch}-Setup.${ext}",
+      "displayLanguageSelector": false,
+      "language": "2052"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${os}-${arch}-Portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": ["x64", "arm64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["x64", "arm64"]
+        }
+      ],
+      "icon": "icon.png",
+      "category": "public.app-category.utilities",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "${productName} ${version}",
+      "icon": "icon.png",
+      "contents": [
+        {
+          "x": 130,
+          "y": 220
+        },
+        {
+          "x": 410,
+          "y": 220,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        },
+        {
+          "target": "rpm",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "icon.png",
+      "category": "Network",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "lilingfengdev",
+      "repo": "EdgeLink",
+      "releaseType": "release"
+    },
+
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/adm-zip/**/*",
+      "node_modules/fs-extra/**/*"
+    ]
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "chalk": "^4.1.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "fs-extra": "^11.2.0",
+    "inquirer": "^8.2.6",
+    "socket.io": "^4.8.1",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "keywords": [
+    "xray",
+    "proxy",
+    "vpn",
+    "network",
+    "manager",
+    "minecraft",
+    "gaming"
+  ],
+  "author": {
+    "name": "EdgeLink Team",
+    "email": "support@edgelink.app",
+    "url": "https://github.com/lilingfengdev/EdgeLink"
+  },
+  "license": "MIT",
   "private": true
 }

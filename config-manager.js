@@ -8,11 +8,13 @@ const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const logger = require('./utils/logger');
 const ConfigValidator = require('./utils/validator');
+const { getPathManager } = require('./utils/path-manager');
 
 class ConfigManager {
     constructor() {
-        this.configsDir = path.join(__dirname, 'configs');
-        this.templatesDir = path.join(__dirname, 'templates');
+        const pathManager = getPathManager();
+        this.configsDir = pathManager.get('configs');
+        this.templatesDir = pathManager.get('templates');
         this.ensureDirectories();
     }
 
@@ -125,12 +127,12 @@ class ConfigManager {
             network: streamConfig.network || "tcp"
         };
 
-        // TLS设置
-        if (streamConfig.security === "tls") {
-            settings.security = "tls";
+        // TLS设置 - 强制使用TLS安全协议
+        if (streamConfig.security === "tls" || !streamConfig.security) {
+            settings.security = "tls"; // 强制使用TLS
             settings.tlsSettings = {
                 serverName: streamConfig.serverName || streamConfig.address,
-                allowInsecure: streamConfig.allowInsecure || false
+                allowInsecure: true // 强制设置为true
             };
 
             if (streamConfig.fingerprint) {
@@ -141,6 +143,8 @@ class ConfigManager {
                 settings.tlsSettings.alpn = streamConfig.alpn;
             }
         }
+
+        // 移除REALITY支持 - 用户要求security必须是TLS
 
         // WebSocket设置
         if (streamConfig.network === "ws") {
@@ -170,12 +174,45 @@ class ConfigManager {
             settings.xhttpSettings = {
                 host: streamConfig.host,
                 mode: streamConfig.mode || "auto",
-                path: streamConfig.path || "/"
+                path: streamConfig.path || "/mcproxy"
             };
 
-            if (streamConfig.extra) {
-                settings.xhttpSettings.extra = streamConfig.extra;
+            // 构建完整的extra配置
+            const extra = {
+                headers: streamConfig.headers || {},
+                xPaddingBytes: streamConfig.xPaddingBytes || "100-1000",
+                noGRPCHeader: streamConfig.noGRPCHeader || false,
+                noSSEHeader: streamConfig.noSSEHeader || false,
+                // 根据用户要求和参考配置修正的参数
+                scMaxEachPostBytes: streamConfig.scMaxEachPostBytes || 1000000, // 1MB固定值
+                scMinPostsIntervalMs: streamConfig.scMinPostsIntervalMs || "0-100", // 范围值
+                scMaxBufferedPosts: streamConfig.scMaxBufferedPosts || 30,
+                scStreamUpServerSecs: streamConfig.scStreamUpServerSecs || "20-80"
+            };
+
+            // XMUX配置 - 根据官方文档完善
+            if (streamConfig.enableXMUX !== false) {
+                extra.xmux = {
+                    maxConcurrency: streamConfig.maxConcurrency || "16-32",
+                    maxConnections: streamConfig.maxConnections || 0,
+                    cMaxReuseTimes: streamConfig.cMaxReuseTimes || 0,
+                    hMaxRequestTimes: streamConfig.hMaxRequestTimes || "600-900",
+                    hMaxReusableSecs: streamConfig.hMaxReusableSecs || "1800-3000",
+                    hKeepAlivePeriod: streamConfig.hKeepAlivePeriod || 0
+                };
             }
+
+            // 上下行分离配置
+            if (streamConfig.downloadSettings) {
+                extra.downloadSettings = streamConfig.downloadSettings;
+            }
+
+            // 合并用户自定义的extra配置
+            if (streamConfig.extra) {
+                Object.assign(extra, streamConfig.extra);
+            }
+
+            settings.xhttpSettings.extra = extra;
         }
 
         return settings;
@@ -188,31 +225,16 @@ class ConfigManager {
         const inbound = {
             listen: config.listen || "127.0.0.1",
             port: parseInt(config.localPort),
-            protocol: config.inboundProtocol || "socks",
+            protocol: "dokodemo-door", // 强制使用dokodemo-door
             tag: config.tag || "proxy-in"
         };
 
-        // SOCKS设置
-        if (inbound.protocol === "socks") {
-            inbound.settings = {
-                auth: "noauth",
-                udp: config.udpEnabled || false
-            };
-        }
-
-        // HTTP设置
-        if (inbound.protocol === "http") {
-            inbound.settings = {};
-        }
-
-        // dokodemo-door设置
-        if (inbound.protocol === "dokodemo-door") {
-            inbound.settings = {
-                address: config.targetAddress,
-                port: parseInt(config.targetPort),
-                network: config.network || "tcp"
-            };
-        }
+        // dokodemo-door设置 - 必须使用此协议
+        inbound.settings = {
+            address: config.address, // 使用远程服务器地址
+            port: parseInt(config.port), // 使用远程服务器端口
+            network: "tcp"
+        };
 
         return inbound;
     }
@@ -222,6 +244,17 @@ class ConfigManager {
      */
     generateConfig(proxyConfig) {
         const config = this.createBaseConfig();
+
+        // 确保使用正确的默认配置
+        if (!proxyConfig.streamSettings) {
+            proxyConfig.streamSettings = {};
+        }
+
+        // 强制设置必需的配置
+        proxyConfig.streamSettings.network = "xhttp";
+        proxyConfig.streamSettings.security = "tls";
+        proxyConfig.streamSettings.mode = "auto";
+        proxyConfig.streamSettings.path = "/mcproxy";
 
         // 添加入站配置
         const inbound = this.createInbound(proxyConfig);

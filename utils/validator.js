@@ -120,6 +120,58 @@ class ConfigValidator {
     }
 
     /**
+     * 验证XHTTP配置
+     */
+    static validateXHTTPConfig(xhttpSettings) {
+        const errors = [];
+
+        if (!xhttpSettings) {
+            return { isValid: true, errors: [] };
+        }
+
+        // 验证path
+        if (xhttpSettings.path && typeof xhttpSettings.path !== 'string') {
+            errors.push('XHTTP path必须是字符串');
+        }
+
+        // 验证mode
+        if (xhttpSettings.mode) {
+            const validModes = ['auto', 'packet-up', 'stream-up', 'stream-one'];
+            if (!validModes.includes(xhttpSettings.mode)) {
+                errors.push('XHTTP mode无效');
+            }
+        }
+
+        // 验证extra配置
+        if (xhttpSettings.extra) {
+            const extra = xhttpSettings.extra;
+
+            // 验证scMaxEachPostBytes (应该是数字)
+            if (extra.scMaxEachPostBytes && typeof extra.scMaxEachPostBytes !== 'number') {
+                errors.push('scMaxEachPostBytes必须是数字');
+            }
+
+            // 验证scMinPostsIntervalMs (应该是字符串范围值，如"0-100")
+            if (extra.scMinPostsIntervalMs && typeof extra.scMinPostsIntervalMs !== 'string') {
+                errors.push('scMinPostsIntervalMs必须是字符串范围值');
+            }
+
+            // 验证XMUX配置
+            if (extra.xmux) {
+                const xmux = extra.xmux;
+                if (xmux.maxConcurrency && typeof xmux.maxConcurrency !== 'string' && typeof xmux.maxConcurrency !== 'number') {
+                    errors.push('XMUX maxConcurrency格式无效');
+                }
+            }
+        }
+
+        return {
+            isValid: errors.length === 0,
+            errors: errors
+        };
+    }
+
+    /**
      * 验证完整的XRay配置
      */
     static validateXRayConfig(config) {
@@ -153,6 +205,14 @@ class ConfigValidator {
                 config.outbounds.forEach((outbound, index) => {
                     if (!outbound.protocol) {
                         errors.push(`出站配置 ${index + 1} 协议缺失`);
+                    }
+
+                    // 验证XHTTP streamSettings
+                    if (outbound.streamSettings && outbound.streamSettings.xhttpSettings) {
+                        const xhttpValidation = this.validateXHTTPConfig(outbound.streamSettings.xhttpSettings);
+                        if (!xhttpValidation.isValid) {
+                            errors.push(...xhttpValidation.errors.map(err => `出站配置 ${index + 1} XHTTP: ${err}`));
+                        }
                     }
                 });
             }

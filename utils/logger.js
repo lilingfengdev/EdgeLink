@@ -9,15 +9,35 @@ const chalk = require('chalk');
 
 class Logger {
     constructor() {
-        this.logDir = path.join(__dirname, '..', 'logs');
+        this.logDir = null;
+        this.initialized = false;
+    }
+
+    /**
+     * 初始化日志目录
+     */
+    initialize() {
+        if (this.initialized) return;
+
+        try {
+            // 尝试获取路径管理器
+            const { getPathManager } = require('./path-manager');
+            const pathManager = getPathManager();
+            this.logDir = pathManager.get('logs');
+        } catch (error) {
+            // 如果路径管理器不可用，使用默认路径
+            this.logDir = path.join(require('os').homedir(), '.edgelink', 'logs');
+        }
+
         this.ensureLogDir();
+        this.initialized = true;
     }
 
     /**
      * 确保日志目录存在
      */
     ensureLogDir() {
-        if (!fs.existsSync(this.logDir)) {
+        if (this.logDir && !fs.existsSync(this.logDir)) {
             fs.mkdirSync(this.logDir, { recursive: true });
         }
     }
@@ -33,11 +53,24 @@ class Logger {
      * 写入日志文件
      */
     writeToFile(level, message) {
-        const timestamp = this.getTimestamp();
-        const logEntry = `[${timestamp}] [${level}] ${message}\n`;
-        const logFile = path.join(this.logDir, `${new Date().toISOString().split('T')[0]}.log`);
-        
-        fs.appendFileSync(logFile, logEntry);
+        if (!this.initialized) {
+            this.initialize();
+        }
+
+        if (!this.logDir) {
+            return; // 无法写入日志文件
+        }
+
+        try {
+            const timestamp = this.getTimestamp();
+            const logEntry = `[${timestamp}] [${level}] ${message}\n`;
+            const logFile = path.join(this.logDir, `${new Date().toISOString().split('T')[0]}.log`);
+
+            fs.appendFileSync(logFile, logEntry);
+        } catch (error) {
+            // 静默处理日志写入错误，避免循环错误
+            console.error('日志写入失败:', error.message);
+        }
     }
 
     /**
