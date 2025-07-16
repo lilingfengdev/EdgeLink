@@ -145,16 +145,13 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         CSC_IDENTITY_AUTO_DISCOVERY: false
-        APPLE_ID: ${{ secrets.APPLE_ID }}
-        APPLE_ID_PASS: ${{ secrets.APPLE_ID_PASS }}
-        CSC_LINK: ${{ secrets.CSC_LINK }}
-        CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
       shell: bash
         
     - name: List build outputs
       run: |
         echo "Build completed. Listing dist directory:"
         ls -la dist/ || echo "No dist directory found"
+      shell: bash
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4

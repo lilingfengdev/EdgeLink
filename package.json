@@ -120,8 +120,9 @@
       ],
       "category": "public.app-category.utilities",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "sign": null
     },
     "dmg": {
       "title": "${productName} ${version}",
