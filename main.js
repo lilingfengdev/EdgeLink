@@ -290,7 +290,7 @@ class EdgeLinkApp {
             height: 800,
             minWidth: 800,
             minHeight: 600,
-            icon: path.join(__dirname, 'assets', 'icon.png'),
+            // icon: path.join(__dirname, 'assets', 'icon.png'), // 暂时移除图标引用
             webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,

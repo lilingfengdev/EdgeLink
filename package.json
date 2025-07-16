@@ -48,7 +48,6 @@
       "public/**/*",
       "bin/xray_no_window.*",
       "package.json",
-      "icon.png",
       "!**/*.ts",
       "!**/*.md",
       "!.vscode/**",
@@ -87,7 +86,6 @@
           "arch": ["x64", "ia32"]
         }
       ],
-      "icon": "icon.png",
       "requestedExecutionLevel": "asInvoker",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "sign": null,
@@ -102,8 +100,6 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "EdgeLink - Minecraft代理管理器",
-      "installerIcon": "icon.png",
-      "uninstallerIcon": "icon.png",
       "artifactName": "${productName}-${version}-${os}-${arch}-Setup.${ext}",
       "displayLanguageSelector": false,
       "language": "2052"
@@ -122,7 +118,6 @@
           "arch": ["x64", "arm64"]
         }
       ],
-      "icon": "icon.png",
       "category": "public.app-category.utilities",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
       "hardenedRuntime": true,
@@ -130,7 +125,6 @@
     },
     "dmg": {
       "title": "${productName} ${version}",
-      "icon": "icon.png",
       "contents": [
         {
           "x": 130,
@@ -159,7 +153,6 @@
           "arch": ["x64"]
         }
       ],
-      "icon": "icon.png",
       "category": "Network",
       "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
     },
