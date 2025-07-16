@@ -110,6 +110,18 @@ jobs:
         chmod +x bin/xray
         ls -la bin/
 
+    - name: Clean macOS build environment
+      if: matrix.platform == 'mac'
+      run: |
+        # 清理可能存在的挂载点
+        sudo diskutil list | grep "EdgeLink" | awk '{print $1}' | xargs -I {} sudo diskutil unmount {} || true
+        # 清理临时文件
+        sudo rm -rf /tmp/dmg-* || true
+        sudo rm -rf /private/var/folders/*/T/t-*/EdgeLink* || true
+        # 清理可能的卷挂载
+        sudo hdiutil detach "/Volumes/EdgeLink"* -force || true
+        echo "macOS build environment cleaned"
+
     - name: Download XRay (Linux)
       if: matrix.platform == 'linux'
       run: |
@@ -134,10 +146,19 @@ jobs:
             npx electron-builder --win --ia32
           fi
         elif [ "${{ matrix.platform }}" = "mac" ]; then
+          # 设置macOS特定的环境变量
+          export ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES=true
+          export DEBUG=electron-builder
+
+          # 清理dist目录
+          rm -rf dist/
+
           if [ "${{ matrix.arch }}" = "arm64" ]; then
-            npx electron-builder --mac --arm64
+            echo "Building macOS ARM64..."
+            npx electron-builder --mac --arm64 --config.dmg.format=UDZO
           else
-            npx electron-builder --mac --x64
+            echo "Building macOS x64..."
+            npx electron-builder --mac --x64 --config.dmg.format=UDZO
           fi
         elif [ "${{ matrix.platform }}" = "linux" ]; then
           npx electron-builder --linux --x64
@@ -145,12 +166,32 @@ jobs:
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         CSC_IDENTITY_AUTO_DISCOVERY: false
+        ELECTRON_BUILDER_CACHE: ${{ env.ELECTRON_BUILDER_CACHE }}
+        ELECTRON_CACHE: ${{ env.ELECTRON_CACHE }}
       shell: bash
         
+    - name: Post-build cleanup (macOS)
+      if: matrix.platform == 'mac' && always()
+      run: |
+        echo "Performing post-build cleanup for macOS..."
+        # 强制卸载所有EdgeLink相关的挂载点
+        sudo hdiutil detach "/Volumes/EdgeLink"* -force || true
+        # 清理临时DMG文件
+        sudo find /tmp -name "*EdgeLink*" -type f -delete || true
+        sudo find /private/var/folders -name "*EdgeLink*" -type f -delete || true
+        echo "macOS post-build cleanup completed"
+      shell: bash
+
     - name: List build outputs
       run: |
         echo "Build completed. Listing dist directory:"
         ls -la dist/ || echo "No dist directory found"
+        if [ "${{ matrix.platform }}" = "mac" ]; then
+          echo "Checking for DMG files:"
+          find dist/ -name "*.dmg" -exec ls -la {} \; || echo "No DMG files found"
+          echo "Checking mounted volumes:"
+          mount | grep EdgeLink || echo "No EdgeLink volumes mounted"
+        fi
       shell: bash
 
     - name: Upload artifacts
