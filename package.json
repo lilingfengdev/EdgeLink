@@ -71,18 +71,20 @@
       "!{tsconfig.json,tslint.json,dev-app-update.yml}",
       "!build*.js",
       "!build*.bat",
-      "!test*.js"
+      "!test*.js",
+      "!*报告.md",
+      "!*解决方案.md"
     ],
 
     "win": {
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": ["x64", "ia32"]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": ["x64", "ia32"]
         }
       ],
       "icon": "icon.png",
